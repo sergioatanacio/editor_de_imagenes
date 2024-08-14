@@ -1,0 +1,265 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Editor de Imagen Mejorado</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+</head>
+<body class="bg-gray-100 min-h-screen p-4">
+    <div class="bg-white p-4 rounded-lg shadow-md w-full max-w-6xl mx-auto">
+        <h1 class="text-2xl font-bold mb-4 text-center">Editor de Imagen Mejorado</h1>
+        
+        <div class="flex space-x-4">
+            <div class="w-1/2 space-y-4">
+                <div>
+                    <h2 class="text-lg font-semibold mb-2">Imagen Editada</h2>
+                    <canvas id="editedCanvas" class="w-full border rounded"></canvas>
+                </div>
+                <div>
+                    <h2 class="text-lg font-semibold mb-2">Imagen Original</h2>
+                    <canvas id="originalCanvas" class="w-full border rounded"></canvas>
+                </div>
+                <div>
+                    <input type="file" id="imageInput" accept="image/*" class="w-full p-2 border rounded">
+                </div>
+            </div>
+            
+            <div class="w-1/2">
+                <div id="filterControls" class="space-y-2">
+                    <div>
+                        <label for="brightnessSlider" class="block mb-1 text-sm">Brillo:</label>
+                        <input type="range" id="brightnessSlider" min="-100" max="100" value="0" class="w-full" data-filter="brightness">
+                    </div>
+                    <div>
+                        <label for="contrastSlider" class="block mb-1 text-sm">Contraste:</label>
+                        <input type="range" id="contrastSlider" min="0" max="200" value="100" class="w-full" data-filter="contrast">
+                    </div>
+                    <div>
+                        <label for="saturacionSlider" class="block mb-1 text-sm">Saturación:</label>
+                        <input type="range" id="saturacionSlider" min="0" max="200" value="100" class="w-full" data-filter="saturate">
+                    </div>
+                    <div>
+                        <label for="sepiaSlider" class="block mb-1 text-sm">Sepia:</label>
+                        <input type="range" id="sepiaSlider" min="0" max="100" value="0" class="w-full" data-filter="sepia">
+                    </div>
+                    <div>
+                        <label for="hueRotateSlider" class="block mb-1 text-sm">Rotación de tono:</label>
+                        <input type="range" id="hueRotateSlider" min="0" max="360" value="0" class="w-full" data-filter="hue-rotate">
+                    </div>
+                    <div>
+                        <label for="blurSlider" class="block mb-1 text-sm">Desenfoque:</label>
+                        <input type="range" id="blurSlider" min="0" max="10" value="0" step="0.1" class="w-full" data-filter="blur">
+                    </div>
+                </div>
+                
+                <div class="flex flex-wrap justify-between gap-2 mt-4">
+                    <button id="flipHorizontalButton" class="bg-purple-500 text-white px-3 py-1 rounded text-sm hover:bg-purple-600">Voltear H</button>
+                    <button id="flipVerticalButton" class="bg-indigo-500 text-white px-3 py-1 rounded text-sm hover:bg-indigo-600">Voltear V</button>
+                    <button id="rotateButton" class="bg-pink-500 text-white px-3 py-1 rounded text-sm hover:bg-pink-600">Rotar 90°</button>
+                    <button id="resetFiltersButton" class="bg-yellow-500 text-white px-3 py-1 rounded text-sm hover:bg-yellow-600">Resetear</button>
+                    <button id="exportButton" class="bg-blue-500 text-white px-3 py-1 rounded text-sm hover:bg-blue-600">Exportar</button>
+                    <button id="saveStateButton" class="bg-green-500 text-white px-3 py-1 rounded text-sm hover:bg-green-600">Guardar</button>
+                    <button id="loadStateButton" class="bg-orange-500 text-white px-3 py-1 rounded text-sm hover:bg-orange-600">Cargar</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        const originalCanvas = document.getElementById('originalCanvas');
+        const editedCanvas = document.getElementById('editedCanvas');
+        const ctxOriginal = originalCanvas.getContext('2d');
+        const ctxEdited = editedCanvas.getContext('2d');
+        const imageInput = document.getElementById('imageInput');
+        const filterControls = document.getElementById('filterControls');
+        const exportButton = document.getElementById('exportButton');
+        const saveStateButton = document.getElementById('saveStateButton');
+        const loadStateButton = document.getElementById('loadStateButton');
+        const flipHorizontalButton = document.getElementById('flipHorizontalButton');
+        const flipVerticalButton = document.getElementById('flipVerticalButton');
+        const rotateButton = document.getElementById('rotateButton');
+        const resetFiltersButton = document.getElementById('resetFiltersButton');
+
+        let originalImage;
+        let isFlippedHorizontally = false;
+        let isFlippedVertically = false;
+        let rotationAngle = 0;
+
+        imageInput.addEventListener('change', loadImage);
+        filterControls.addEventListener('input', applyFilters);
+        exportButton.addEventListener('click', exportImage);
+        saveStateButton.addEventListener('click', saveState);
+        loadStateButton.addEventListener('click', loadState);
+        flipHorizontalButton.addEventListener('click', () => { isFlippedHorizontally = !isFlippedHorizontally; applyFilters(); });
+        flipVerticalButton.addEventListener('click', () => { isFlippedVertically = !isFlippedVertically; applyFilters(); });
+        rotateButton.addEventListener('click', () => { rotationAngle = (rotationAngle + 90) % 360; applyFilters(); });
+        resetFiltersButton.addEventListener('click', resetFilters);
+
+        function loadImage(e) {
+            const file = e.target.files[0];
+            const reader = new FileReader();
+
+            reader.onload = function(event) {
+                originalImage = new Image();
+                originalImage.onload = function() {
+                    const maxWidth = 400;
+                    const maxHeight = 300;
+                    let width = originalImage.width;
+                    let height = originalImage.height;
+
+                    if (width > height) {
+                        if (width > maxWidth) {
+                            height *= maxWidth / width;
+                            width = maxWidth;
+                        }
+                    } else {
+                        if (height > maxHeight) {
+                            width *= maxHeight / height;
+                            height = maxHeight;
+                        }
+                    }
+
+                    originalCanvas.width = editedCanvas.width = width;
+                    originalCanvas.height = editedCanvas.height = height;
+                    ctxOriginal.drawImage(originalImage, 0, 0, width, height);
+                    applyFilters();
+                }
+                originalImage.src = event.target.result;
+            }
+            reader.readAsDataURL(file);
+        }
+
+        function applyFilters() {
+            if (!originalImage) return;
+
+            ctxEdited.clearRect(0, 0, editedCanvas.width, editedCanvas.height);
+            ctxEdited.save();
+            ctxEdited.translate(editedCanvas.width / 2, editedCanvas.height / 2);
+            ctxEdited.scale(isFlippedHorizontally ? -1 : 1, isFlippedVertically ? -1 : 1);
+            ctxEdited.rotate(rotationAngle * Math.PI / 180);
+            ctxEdited.translate(-editedCanvas.width / 2, -editedCanvas.height / 2);
+
+            let filterString = '';
+            document.querySelectorAll('#filterControls input[type="range"]').forEach(slider => {
+                const filter = slider.dataset.filter;
+                const value = slider.value;
+                
+                switch(filter) {
+                    case 'brightness':
+                        filterString += `brightness(${(parseInt(value) + 100) / 100}) `;
+                        break;
+                    case 'contrast':
+                        filterString += `contrast(${value}%) `;
+                        break;
+                    case 'saturate':
+                        filterString += `saturate(${value}%) `;
+                        break;
+                    case 'sepia':
+                        filterString += `sepia(${value}%) `;
+                        break;
+                    case 'hue-rotate':
+                        filterString += `hue-rotate(${value}deg) `;
+                        break;
+                    case 'blur':
+                        filterString += `blur(${value}px) `;
+                        break;
+                }
+            });
+
+            ctxEdited.filter = filterString.trim();
+            ctxEdited.drawImage(originalImage, 0, 0, editedCanvas.width, editedCanvas.height);
+            ctxEdited.restore();
+        }
+
+        function exportImage() {
+            const dataURL = editedCanvas.toDataURL('image/png');
+            const link = document.createElement('a');
+            link.download = 'imagen_editada.png';
+            link.href = dataURL;
+            link.click();
+        }
+
+        function saveState() {
+            const state = {
+                imageData: originalCanvas.toDataURL(),
+                filters: {},
+                isFlippedHorizontally,
+                isFlippedVertically,
+                rotationAngle
+            };
+            document.querySelectorAll('#filterControls input[type="range"]').forEach(slider => {
+                state.filters[slider.id] = slider.value;
+            });
+            const blob = new Blob([JSON.stringify(state)], {type: 'application/json'});
+            const link = document.createElement('a');
+            link.download = 'estado_imagen.json';
+            link.href = URL.createObjectURL(blob);
+            link.click();
+        }
+
+        function loadState() {
+            const input = document.createElement('input');
+            input.type = 'file';
+            input.accept = '.json';
+            input.onchange = e => {
+                const file = e.target.files[0];
+                const reader = new FileReader();
+                reader.onload = event => {
+                    const state = JSON.parse(event.target.result);
+                    originalImage = new Image();
+                    originalImage.onload = function() {
+                        const maxWidth = 400;
+                        const maxHeight = 300;
+                        let width = originalImage.width;
+                        let height = originalImage.height;
+
+                        if (width > height) {
+                            if (width > maxWidth) {
+                                height *= maxWidth / width;
+                                width = maxWidth;
+                            }
+                        } else {
+                            if (height > maxHeight) {
+                                width *= maxHeight / height;
+                                height = maxHeight;
+                            }
+                        }
+
+                        originalCanvas.width = editedCanvas.width = width;
+                        originalCanvas.height = editedCanvas.height = height;
+                        ctxOriginal.drawImage(originalImage, 0, 0, width, height);
+                        Object.keys(state.filters).forEach(sliderId => {
+                            const slider = document.getElementById(sliderId);
+                            if (slider) slider.value = state.filters[sliderId];
+                        });
+                        isFlippedHorizontally = state.isFlippedHorizontally;
+                        isFlippedVertically = state.isFlippedVertically;
+                        rotationAngle = state.rotationAngle;
+                        applyFilters();
+                    }
+                    originalImage.src = state.imageData;
+                }
+                reader.readAsText(file);
+            }
+            input.click();
+        }
+
+        function resetFilters() {
+            document.querySelectorAll('#filterControls input[type="range"]').forEach(slider => {
+                if (slider.dataset.filter === 'brightness') {
+                    slider.value = 0;
+                } else if (slider.dataset.filter === 'contrast' || slider.dataset.filter === 'saturate') {
+                    slider.value = 100;
+                } else {
+                    slider.value = 0;
+                }
+            });
+            isFlippedHorizontally = false;
+            isFlippedVertically = false;
+            rotationAngle = 0;
+            applyFilters();
+        }
+    </script>
+</body>
+</html>
